@@ -133,7 +133,19 @@ console.log('\n【6】無音の検知');
   eq(L.shouldWarnSilence(tiny, 15000, 0.001), false, 'しきい値は呼び出し側で変えられる');
 }
 
-console.log('\n【7】配線（ブラウザで動かせない分の静的検査）');
+console.log('\n【7】共有の種類と注意表示');
+{
+  eq(L.shareSurfaceNote('browser'), null, 'タブ共有なら注意は出さない（狙いどおりの状態）');
+  eq(typeof L.shareSurfaceNote('monitor'), 'string', '画面全体なら注意を出す');
+  eq(typeof L.shareSurfaceNote('window'), 'string', 'ウィンドウ共有でも注意を出す');
+  eq(L.shareSurfaceNote(undefined), null, '値が取れない環境では何も言わない');
+  eq(L.shareSurfaceNote(''), null, '空文字も同様');
+  eq(L.shareSurfaceNote('BROWSER'), null, '大文字小文字は問わない');
+  eq(/マイクは使っていない/.test(L.shareSurfaceNote('monitor')), true, '注意文でもマイク不使用に触れる');
+  eq(/他の音/.test(L.shareSurfaceNote('monitor')), true, '何が混ざるのかを具体的に書く');
+}
+
+console.log('\n【8】配線（ブラウザで動かせない分の静的検査）');
 {
   const fs = require('fs');
   const appSrc  = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
@@ -162,8 +174,13 @@ console.log('\n【7】配線（ブラウザで動かせない分の静的検査�
 
   // 録音まわりの前提が壊れていないか（実装の意図を固定する）
   eq(/getDisplayMedia/.test(appSrc), true, '取得はタブ音声共有（getDisplayMedia）のみ');
+  // 呼び出しだけを見る（コメントで getUserMedia に言及すること自体は妨げない）
+  eq(/getUserMedia\s*\(/.test(appSrc), false, '**マイクを使わない**（getUserMedia を呼ばない＝周囲の音は入らない）');
   eq(/m3u8|\.mpd|widevine|clearkey|decrypt/i.test(appSrc), false, '保護されたストリームを取りに行く実装は無い');
   eq(/new MediaStream\(audioTracks\)/.test(appSrc), true, '録音するのは音声トラックだけ（映像は記録しない）');
+  eq(/selfBrowserSurface/.test(appSrc), true, '自分のタブを共有候補から外している');
+  eq(/マイクを使いません/.test(tplSrc), true, '画面にマイク不使用を明記している');
+  eq(/画面全体ではありません/.test(tplSrc), true, '使い方で共有の種類（タブ／画面全体ではない）を案内している');
 }
 
 console.log('\n' + '─'.repeat(62));

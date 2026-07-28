@@ -59,6 +59,9 @@
   .alert { border-left: 4px solid var(--err); background: var(--bg); border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 14px; }
   .alert b { color: var(--err); }
   .alert ul { margin: 6px 0 0; padding-left: 20px; }
+  .alert.warn { border-left-color: var(--warn); }
+  .mic-note { font-size: 12px; color: var(--sub); margin: 14px 0 0; }
+  .mic-note b { color: var(--ink); }
   .toast {
     position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 10;
     background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ok);
@@ -90,6 +93,12 @@
       <button class="btn primary" id="stop" type="button" disabled>停止して保存</button>
       <button class="btn" id="save-partial" type="button" disabled>ここまでを保存</button>
     </div>
+
+    <p class="mic-note">
+      このアプリは<b>マイクを使いません</b>。録音されるのは選んだタブが鳴らす音だけで、周囲の話し声や生活音は入りません。
+    </p>
+
+    <div class="alert warn" id="surface-note" hidden></div>
 
     <div class="alert" id="silence" hidden>
       <b>音声が入っていません。</b>
@@ -134,7 +143,7 @@
   </div>
 
   <p class="hint">
-    <b>使い方</b>　「録音を開始」→ 共有するタブとして<b>研修を再生するタブ</b>を選び、<b>「タブの音声も共有する」にチェック</b>→ 再生を始めます。<br>
+    <b>使い方</b>　「録音を開始」→ 共有の種類は<b>「タブ」</b>を選び（画面全体ではありません）、<b>研修を再生するタブ</b>を指定して、<b>「タブの音声も共有する」にチェック</b>→ 再生を始めます。<br>
     録音中はこのタブを閉じないでください。長い研修では途中で「ここまでを保存」しておくと安心です。<br>
     <b>用途</b>　購入して視聴できる研修を、本人が復習するために録音するための道具です。保護された配信を取り出す機能はありません。録音したものを配布・共有しないでください。
   </p>
@@ -253,6 +262,25 @@ function buildMarkerText(title, markers, date) {
 }
 
 /**
+ * 共有の種類に応じた注意文。
+ *
+ * このアプリはマイクを使わないので、周囲の音（話し声・生活音）はどの場合も入らない。
+ * ただし「画面全体」や「ウィンドウ」を共有すると、そのパソコンが鳴らす他の音
+ * （通知音など）が混ざりうる。タブを選んでいればそのタブの音だけになる。
+ *
+ * @param {string|undefined} displaySurface 映像トラックの displaySurface
+ * @return {string|null} 出すべき注意文。不要なら null
+ */
+function shareSurfaceNote(displaySurface) {
+  const s = String(displaySurface == null ? '' : displaySurface).toLowerCase();
+  if (s === 'monitor' || s === 'window') {
+    return '画面全体（またはウィンドウ）を共有しています。このパソコンが鳴らす他の音（通知音など）も一緒に録音されます。'
+         + '研修のタブだけを選び直すと確実です。※マイクは使っていないので、周囲の話し声は入りません。';
+  }
+  return null;   // タブ（browser）と、値が取れない環境では何も言わない
+}
+
+/**
  * 無音が続いていないか判定する。
  *
  * タブ共有の際に「タブの音声も共有する」のチェックを忘れると、録音は動いているのに
@@ -338,9 +366,13 @@ async function start() {
   try {
     // 音声だけ欲しいが、タブ音声の共有は「画面共有」の一部として提供されるため
     // video も要求する必要がある（映像は記録しない）。
+    // マイク（getUserMedia）は一切使わない。録るのは共有されたタブが鳴らす音だけ。
+    // selfBrowserSurface: 'exclude' で、このレコーダー自身のタブを選択候補から外す
+    // （選ぶと当然無音になり、無音警告の原因が分かりにくいため）。非対応環境では無視される。
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 1 },
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      selfBrowserSurface: 'exclude',
     });
   } catch (e) {
     if (e && e.name === 'NotAllowedError') toast('共有がキャンセルされました', 'warn');
@@ -378,6 +410,14 @@ async function start() {
     if (state.recorder) { toast('共有が終了したため録音を停止しました', 'warn'); stop(); }
   });
 
+  // タブ以外（画面全体・ウィンドウ）を共有していると、他のアプリの音も混ざる。
+  // 録音は止めず、混ざりうることだけ知らせる。
+  const videoTrack = stream.getVideoTracks()[0];
+  const surface = videoTrack && videoTrack.getSettings ? videoTrack.getSettings().displaySurface : undefined;
+  const note = shareSurfaceNote(surface);
+  $('#surface-note').hidden = !note;
+  if (note) $('#surface-note').textContent = note;
+
   setupMeter(audioOnly);
   await requestWakeLock();
 
@@ -404,6 +444,7 @@ async function stop() {
   const blob = new Blob(state.chunks, { type: state.mime });
   state.recorder = null;
   state.stream = null;
+  $('#surface-note').hidden = true;
   render();
 
   if (!blob.size) { toast('録音データが空でした（音声が共有されていない可能性があります）', 'err'); return; }

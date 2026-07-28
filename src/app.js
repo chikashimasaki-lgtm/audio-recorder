@@ -61,9 +61,13 @@ async function start() {
   try {
     // 音声だけ欲しいが、タブ音声の共有は「画面共有」の一部として提供されるため
     // video も要求する必要がある（映像は記録しない）。
+    // マイク（getUserMedia）は一切使わない。録るのは共有されたタブが鳴らす音だけ。
+    // selfBrowserSurface: 'exclude' で、このレコーダー自身のタブを選択候補から外す
+    // （選ぶと当然無音になり、無音警告の原因が分かりにくいため）。非対応環境では無視される。
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 1 },
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      selfBrowserSurface: 'exclude',
     });
   } catch (e) {
     if (e && e.name === 'NotAllowedError') toast('共有がキャンセルされました', 'warn');
@@ -101,6 +105,14 @@ async function start() {
     if (state.recorder) { toast('共有が終了したため録音を停止しました', 'warn'); stop(); }
   });
 
+  // タブ以外（画面全体・ウィンドウ）を共有していると、他のアプリの音も混ざる。
+  // 録音は止めず、混ざりうることだけ知らせる。
+  const videoTrack = stream.getVideoTracks()[0];
+  const surface = videoTrack && videoTrack.getSettings ? videoTrack.getSettings().displaySurface : undefined;
+  const note = shareSurfaceNote(surface);
+  $('#surface-note').hidden = !note;
+  if (note) $('#surface-note').textContent = note;
+
   setupMeter(audioOnly);
   await requestWakeLock();
 
@@ -127,6 +139,7 @@ async function stop() {
   const blob = new Blob(state.chunks, { type: state.mime });
   state.recorder = null;
   state.stream = null;
+  $('#surface-note').hidden = true;
   render();
 
   if (!blob.size) { toast('録音データが空でした（音声が共有されていない可能性があります）', 'err'); return; }

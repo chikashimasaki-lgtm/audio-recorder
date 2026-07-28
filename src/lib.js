@@ -109,6 +109,25 @@ function buildMarkerText(title, markers, date) {
 }
 
 /**
+ * 共有の種類に応じた注意文。
+ *
+ * このアプリはマイクを使わないので、周囲の音（話し声・生活音）はどの場合も入らない。
+ * ただし「画面全体」や「ウィンドウ」を共有すると、そのパソコンが鳴らす他の音
+ * （通知音など）が混ざりうる。タブを選んでいればそのタブの音だけになる。
+ *
+ * @param {string|undefined} displaySurface 映像トラックの displaySurface
+ * @return {string|null} 出すべき注意文。不要なら null
+ */
+function shareSurfaceNote(displaySurface) {
+  const s = String(displaySurface == null ? '' : displaySurface).toLowerCase();
+  if (s === 'monitor' || s === 'window') {
+    return '画面全体（またはウィンドウ）を共有しています。このパソコンが鳴らす他の音（通知音など）も一緒に録音されます。'
+         + '研修のタブだけを選び直すと確実です。※マイクは使っていないので、周囲の話し声は入りません。';
+  }
+  return null;   // タブ（browser）と、値が取れない環境では何も言わない
+}
+
+/**
  * 無音が続いていないか判定する。
  *
  * タブ共有の際に「タブの音声も共有する」のチェックを忘れると、録音は動いているのに
@@ -134,6 +153,6 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     formatBytes, formatDuration, formatTimecode, estimateBytes,
     pickMimeType, extForMime, stamp, audioFileName, markerFileName,
-    buildMarkerText, shouldWarnSilence,
+    buildMarkerText, shouldWarnSilence, shareSurfaceNote,
   };
 }

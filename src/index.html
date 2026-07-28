@@ -59,6 +59,9 @@
   .alert { border-left: 4px solid var(--err); background: var(--bg); border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 14px; }
   .alert b { color: var(--err); }
   .alert ul { margin: 6px 0 0; padding-left: 20px; }
+  .alert.warn { border-left-color: var(--warn); }
+  .mic-note { font-size: 12px; color: var(--sub); margin: 14px 0 0; }
+  .mic-note b { color: var(--ink); }
   .toast {
     position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 10;
     background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ok);
@@ -90,6 +93,12 @@
       <button class="btn primary" id="stop" type="button" disabled>停止して保存</button>
       <button class="btn" id="save-partial" type="button" disabled>ここまでを保存</button>
     </div>
+
+    <p class="mic-note">
+      このアプリは<b>マイクを使いません</b>。録音されるのは選んだタブが鳴らす音だけで、周囲の話し声や生活音は入りません。
+    </p>
+
+    <div class="alert warn" id="surface-note" hidden></div>
 
     <div class="alert" id="silence" hidden>
       <b>音声が入っていません。</b>
@@ -134,7 +143,7 @@
   </div>
 
   <p class="hint">
-    <b>使い方</b>　「録音を開始」→ 共有するタブとして<b>研修を再生するタブ</b>を選び、<b>「タブの音声も共有する」にチェック</b>→ 再生を始めます。<br>
+    <b>使い方</b>　「録音を開始」→ 共有の種類は<b>「タブ」</b>を選び（画面全体ではありません）、<b>研修を再生するタブ</b>を指定して、<b>「タブの音声も共有する」にチェック</b>→ 再生を始めます。<br>
     録音中はこのタブを閉じないでください。長い研修では途中で「ここまでを保存」しておくと安心です。<br>
     <b>用途</b>　購入して視聴できる研修を、本人が復習するために録音するための道具です。保護された配信を取り出す機能はありません。録音したものを配布・共有しないでください。
   </p>
