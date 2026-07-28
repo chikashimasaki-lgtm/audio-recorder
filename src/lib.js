@@ -108,6 +108,81 @@ function buildMarkerText(title, markers, date) {
   return head.concat(body, ['']).join('\n');
 }
 
+/* ── Gemini に読ませる形式 ──────────────────────────────────────────────────
+ * Gemini API が受け付ける音声は wav / mp3 / aiff / aac / ogg / flac のみ。
+ * Chrome の MediaRecorder が出す WebM(Opus) は対象外なので、そのままでは読めない。
+ * 録音形式が対応外のときは WAV へ変換して保存する。
+ * ------------------------------------------------------------------------- */
+
+const GEMINI_AUDIO_TYPES = ['audio/wav', 'audio/x-wav', 'audio/mp3', 'audio/mpeg',
+  'audio/aiff', 'audio/aac', 'audio/ogg', 'audio/flac'];
+
+/** その録音形式を Gemini がそのまま読めるか。 */
+function isGeminiReadable(mime) {
+  const base = String(mime || '').split(';')[0].trim().toLowerCase();
+  return GEMINI_AUDIO_TYPES.indexOf(base) >= 0;
+}
+
+// 音声認識は16kHzあれば足りる。話し声を1チャンネル・16kHzに落とすと、
+// WAVでも 1分あたり約1.9MB に収まる（44.1kHzステレオの約1/9）。
+const WAV_SAMPLE_RATE = 16000;
+
+/**
+ * モノラルのPCM(Float32)を16bitのWAVにする。
+ * @param {Float32Array} samples -1〜1
+ * @param {number} sampleRate
+ * @return {Uint8Array}
+ */
+function encodeWav(samples, sampleRate) {
+  const rate = sampleRate || WAV_SAMPLE_RATE;
+  const n = samples ? samples.length : 0;
+  const out = new Uint8Array(44 + n * 2);
+  const view = new DataView(out.buffer);
+  const ascii = (off, s) => { for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)); };
+
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + n * 2, true);     // これ以降のバイト数
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);            // fmtチャンクの大きさ
+  view.setUint16(20, 1, true);             // 1 = 無圧縮PCM
+  view.setUint16(22, 1, true);             // モノラル
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);      // 1秒あたりのバイト数
+  view.setUint16(32, 2, true);             // 1サンプルのバイト数
+  view.setUint16(34, 16, true);            // ビット深度
+  ascii(36, 'data');
+  view.setUint32(40, n * 2, true);
+
+  for (let i = 0; i < n; i++) {
+    // -1〜1 の範囲外は歪むので端で止める（クリップ）
+    const v = Math.max(-1, Math.min(1, samples[i]));
+    view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7FFF, true);
+  }
+  return out;
+}
+
+/** 複数チャンネルを平均してモノラルにする。 */
+function downmixToMono(channels) {
+  const list = (channels || []).filter(c => c && c.length);
+  if (!list.length) return new Float32Array(0);
+  if (list.length === 1) return list[0];
+  const n = Math.min.apply(null, list.map(c => c.length));
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let sum = 0;
+    for (let c = 0; c < list.length; c++) sum += list[c][i];
+    out[i] = sum / list.length;
+  }
+  return out;
+}
+
+/** 録音時間からWAVのサイズを見積もる（16bit・モノラル）。 */
+function estimateWavBytes(ms, sampleRate) {
+  const rate = sampleRate || WAV_SAMPLE_RATE;
+  return 44 + Math.max(0, Math.round((Number(ms) || 0) / 1000 * rate)) * 2;
+}
+
 /**
  * 共有の種類に応じた注意文。
  *
@@ -154,5 +229,7 @@ if (typeof module !== 'undefined' && module.exports) {
     formatBytes, formatDuration, formatTimecode, estimateBytes,
     pickMimeType, extForMime, stamp, audioFileName, markerFileName,
     buildMarkerText, shouldWarnSilence, shareSurfaceNote,
+    isGeminiReadable, encodeWav, downmixToMono, estimateWavBytes,
+    GEMINI_AUDIO_TYPES, WAV_SAMPLE_RATE,
   };
 }

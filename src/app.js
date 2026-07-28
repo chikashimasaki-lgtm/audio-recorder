@@ -178,7 +178,7 @@ function saveSoFar() {
   saveRecording(new Blob(state.chunks, { type: state.mime }), elapsedMs(), true);
 }
 
-function saveRecording(blob, ms, partial) {
+async function saveRecording(blob, ms, partial) {
   const ext = extForMime(state.mime);
   const title = $('#title').value + (partial ? '_途中' + (++state.savedCount) : '');
   const name = audioFileName(title, new Date(), ext);
@@ -189,6 +189,33 @@ function saveRecording(blob, ms, partial) {
   }
   toast((partial ? 'ここまでを保存しました：' : '保存しました：') + name
     + '（' + formatDuration(ms) + '・' + formatBytes(blob.size) + '）', 'ok');
+
+  if ($('#wav').checked && !isGeminiReadable(state.mime)) await saveAsWav(blob, name);
+}
+
+/**
+ * Gemini に読ませるための WAV を書き出す。
+ *
+ * Gemini が受け付ける音声は wav/mp3/aiff/aac/ogg/flac で、Chrome の録音形式
+ * （WebM/Opus）はそのままでは読めない。録音済みのデータを復号し、16kHz・モノラルの
+ * WAV にして保存する。音声認識には16kHzあれば足りるので、容量も抑えられる。
+ */
+async function saveAsWav(blob, audioName) {
+  const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!Ctx) { toast('この環境では WAV へ変換できません', 'err'); return; }
+  toast('Gemini用のWAVに変換しています…（長い録音では時間がかかります）', 'warn');
+  try {
+    const buf = await new Ctx(1, 1, WAV_SAMPLE_RATE).decodeAudioData(await blob.arrayBuffer());
+    const channels = [];
+    for (let c = 0; c < buf.numberOfChannels; c++) channels.push(buf.getChannelData(c));
+    const wav = encodeWav(downmixToMono(channels), buf.sampleRate);
+    const wavName = audioName.replace(/\.[A-Za-z0-9]{1,5}$/, '') + '.wav';
+    saveBlob(new Blob([wav], { type: 'audio/wav' }), wavName);
+    toast('Gemini用に保存しました：' + wavName + '（' + formatBytes(wav.length) + '）', 'ok');
+  } catch (e) {
+    // 変換に失敗しても、元の録音は既に保存できている
+    toast('WAVへの変換に失敗しました（元の録音は保存済みです）：' + (e && e.message ? e.message : e), 'err');
+  }
 }
 
 function saveBlob(blob, name) {

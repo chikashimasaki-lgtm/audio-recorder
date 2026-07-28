@@ -62,6 +62,8 @@
   .alert.warn { border-left-color: var(--warn); }
   .mic-note { font-size: 12px; color: var(--sub); margin: 14px 0 0; }
   .mic-note b { color: var(--ink); }
+  label.check { display: flex; gap: 8px; align-items: flex-start; font-size: 13px; cursor: pointer; }
+  label.check input { margin-top: 4px; }
   .toast {
     position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 10;
     background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ok);
@@ -130,6 +132,13 @@
         <span>最大録音時間（分・0で無制限）</span>
         <input type="number" id="limit" min="0" max="600" step="10" value="240">
       </label>
+    </div>
+    <label class="check">
+      <input type="checkbox" id="wav" checked>
+      <span><b>Gemini に読ませる WAV も保存する</b>（16kHz・モノラル。Gemini は WebM を読めないため）</span>
+    </label>
+    <div class="note" id="wav-note">
+      WAVは大きくなります（30分で約55MB／3時間で約330MB）。長い研修は「ここまでを保存」で区切ると扱いやすくなります。
     </div>
   </div>
 

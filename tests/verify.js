@@ -133,7 +133,94 @@ console.log('\n【6】無音の検知');
   eq(L.shouldWarnSilence(tiny, 15000, 0.001), false, 'しきい値は呼び出し側で変えられる');
 }
 
-console.log('\n【7】共有の種類と注意表示');
+console.log('\n【7】Gemini に読ませる形式');
+{
+  eq(L.isGeminiReadable('audio/wav'), true, 'WAV は読める');
+  eq(L.isGeminiReadable('audio/mp3'), true, 'MP3 は読める');
+  eq(L.isGeminiReadable('audio/ogg;codecs=opus'), true, 'OGG は読める（codecs付きでも判定できる）');
+  eq(L.isGeminiReadable('audio/aac'), true, 'AAC は読める');
+  eq(L.isGeminiReadable('audio/flac'), true, 'FLAC は読める');
+  eq(L.isGeminiReadable('audio/webm;codecs=opus'), false, '**WebM は読めない**（Chromeの既定形式）');
+  eq(L.isGeminiReadable('audio/mp4;codecs=mp4a.40.2'), false, 'mp4コンテナは一覧に無いので読めない扱い');
+  eq(L.isGeminiReadable(''), false, '不明な形式は読めない扱い');
+  eq(L.isGeminiReadable('AUDIO/WAV'), true, '大文字でも判定できる');
+}
+{
+  // WAVの中身を1バイトずつ確かめる（壊れたヘッダは再生も解析もできなくなる）
+  const pcm = new Float32Array([0, 0.5, -0.5, 1, -1, 2, -2]);
+  const wav = L.encodeWav(pcm, 16000);
+  const dv = new DataView(wav.buffer);
+  const str = (o, n) => String.fromCharCode.apply(null, Array.from(wav.slice(o, o + n)));
+  eq(wav.length, 44 + 7 * 2, 'ヘッダ44バイト＋16bitのサンプル');
+  eq([str(0, 4), str(8, 4), str(12, 4), str(36, 4)], ['RIFF', 'WAVE', 'fmt ', 'data'], 'チャンクの並び');
+  eq(dv.getUint32(4, true), 36 + 14, 'RIFFサイズ');
+  eq([dv.getUint16(20, true), dv.getUint16(22, true)], [1, 1], '無圧縮PCM・モノラル');
+  eq([dv.getUint32(24, true), dv.getUint32(28, true)], [16000, 32000], 'サンプリング周波数と毎秒バイト数');
+  eq([dv.getUint16(32, true), dv.getUint16(34, true)], [2, 16], 'ブロック境界と16bit');
+  eq(dv.getUint32(40, true), 14, 'dataチャンクの大きさ');
+  eq(dv.getInt16(44, true), 0, '無音は0');
+  eq(dv.getInt16(46, true), 16383, '正の値（0.5×32767を切り捨て）');
+  eq(dv.getInt16(48, true), -16384, '負の値');
+  eq([dv.getInt16(50, true), dv.getInt16(52, true)], [32767, -32768], '最大・最小');
+  eq([dv.getInt16(54, true), dv.getInt16(56, true)], [32767, -32768], '範囲外は端で止める（歪ませない）');
+  eq(L.encodeWav(new Float32Array(0), 16000).length, 44, '空でもヘッダだけの正しいWAVになる');
+  eq(L.encodeWav(new Float32Array(1)).length, 46, 'サンプリング周波数を省略しても既定で作れる');
+}
+{
+  const a = new Float32Array([1, 0, -1]);
+  const b = new Float32Array([0, 0, 1]);
+  eq(Array.from(L.downmixToMono([a, b])), [0.5, 0, 0], '2チャンネルを平均してモノラルにする');
+  eq(Array.from(L.downmixToMono([a])), [1, 0, -1], '1チャンネルはそのまま');
+  eq(Array.from(L.downmixToMono([a, new Float32Array([1, 1])])), [1, 0.5], '長さが違えば短い方に合わせる');
+  eq(L.downmixToMono([]).length, 0, '空でも落ちない');
+  eq(L.downmixToMono(null).length, 0, 'null でも落ちない');
+}
+{
+  eq(L.WAV_SAMPLE_RATE, 16000, 'WAVは16kHz（音声認識に十分で、容量を抑えられる）');
+  eq(L.estimateWavBytes(60_000), 44 + 60 * 16000 * 2, '1分のWAV');
+  eq(L.formatBytes(L.estimateWavBytes(1_800_000)), '54.9 MB', '30分で約55MB（分割の既定を30分にした根拠）');
+  eq(L.formatBytes(L.estimateWavBytes(10_800_000)), '329.6 MB', '3時間まとめると330MB（分割が要る）');
+  eq(L.estimateWavBytes(0), 44, '0秒はヘッダのみ');
+}
+
+{
+  // 自作のWAVを python3 の wave モジュールで開いて確かめる
+  // （自分で書いたものを自分で読めるだけ、にしないため）
+  const fs = require('fs'), os = require('os');
+  const { execFileSync } = require('child_process');
+  const sec = 0.25, rate = 16000;
+  const n = Math.round(sec * rate);
+  const tone = new Float32Array(n);
+  for (let i = 0; i < n; i++) tone[i] = Math.sin(2 * Math.PI * 440 * i / rate) * 0.8;   // 440Hzのサイン波
+  const wavPath = path.join(os.tmpdir(), 'rec-verify-' + process.pid + '.wav');
+  fs.writeFileSync(wavPath, Buffer.from(L.encodeWav(tone, rate)));
+  let info = null;
+  try {
+    info = JSON.parse(execFileSync('python3', ['-c', `
+import wave, json, struct
+w = wave.open(${JSON.stringify(wavPath)})
+frames = w.readframes(w.getnframes())
+vals = struct.unpack('<%dh' % w.getnframes(), frames)
+print(json.dumps({
+  "channels": w.getnchannels(), "width": w.getsampwidth(), "rate": w.getframerate(),
+  "frames": w.getnframes(), "peak": max(abs(v) for v in vals),
+  "crossings": sum(1 for a, b in zip(vals, vals[1:]) if (a < 0) != (b < 0)),
+}))
+`], { encoding: 'utf8' }));
+  } catch (e) {
+    fail++; console.log('  ❌ python3 でWAVを開けなかった: ' + (e.stderr || e.message));
+  }
+  if (info) {
+    eq([info.channels, info.width, info.rate], [1, 2, 16000], 'python3 が モノラル・16bit・16kHz として読める');
+    eq(info.frames, n, 'サンプル数が一致する');
+    eq(info.peak > 26000 && info.peak <= 32767, true, '振幅が保たれている（0.8 → 約26200）');
+    // 440Hz を 0.25秒 → 220周期 → ゼロ交差は約220回
+    eq(Math.abs(info.crossings - 220) <= 2, true, '波形が壊れていない（440Hzのゼロ交差数が合う）');
+  }
+  fs.unlinkSync(wavPath);
+}
+
+console.log('\n【8】共有の種類と注意表示');
 {
   eq(L.shareSurfaceNote('browser'), null, 'タブ共有なら注意は出さない（狙いどおりの状態）');
   eq(typeof L.shareSurfaceNote('monitor'), 'string', '画面全体なら注意を出す');
@@ -145,7 +232,7 @@ console.log('\n【7】共有の種類と注意表示');
   eq(/他の音/.test(L.shareSurfaceNote('monitor')), true, '何が混ざるのかを具体的に書く');
 }
 
-console.log('\n【8】配線（ブラウザで動かせない分の静的検査）');
+console.log('\n【9】配線（ブラウザで動かせない分の静的検査）');
 {
   const fs = require('fs');
   const appSrc  = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
@@ -186,6 +273,11 @@ console.log('\n【8】配線（ブラウザで動かせない分の静的検査�
   const rates = [...tplSrc.matchAll(/<option value="(\d+)"/g)].map(m => Number(m[1]));
   eq(rates, [32000, 48000, 64000, 96000, 128000], '選べるビットレート（低い順）');
   eq(/channelCount: 1/.test(appSrc), true, 'モノラルを要求している（同じビットレートなら音質が保たれる）');
+  eq(/isGeminiReadable\(state\.mime\)/.test(appSrc), true, '録音形式が Gemini で読めるかを見てから変換している（無駄な変換をしない）');
+  eq(/decodeAudioData/.test(appSrc), true, 'WAV変換は録音後に行う（録音経路にWebAudioを挟まない）');
+  eq(/WAV[へに]の?変換に失敗しました（元の録音は保存済み|WAVへの変換に失敗しました/.test(appSrc), true,
+    '変換に失敗しても元の録音は残る作りになっている');
+  eq(/id="wav"[\s\S]{0,80}checked/.test(tplSrc), true, 'Gemini用WAVの保存は既定でON');
 
   // 画面に出す目安サイズが、実際の計算と食い違っていないこと（表示だけ直して計算を忘れる事故を防ぐ）
   const threeHours = 10_800_000;
