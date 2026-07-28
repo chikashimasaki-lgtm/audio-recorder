@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>研修音声レコーダー</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --ink: #1c1f26; --sub: #626a78;
+    --line: #dfe3ea; --accent: #2f6df6; --accent-ink: #ffffff;
+    --ok: #1a7f37; --warn: #9a6700; --err: #b42318; --rec: #d92d20;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --panel: #1c2028; --ink: #e8eaee; --sub: #9aa3b2;
+      --line: #2c313b; --accent: #4f86ff; --accent-ink: #0c1220;
+      --ok: #4ac26b; --warn: #d9a400; --err: #ff7b72; --rec: #ff6b60;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .lead { color: var(--sub); font-size: 13px; margin: 0 0 20px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px; margin-bottom: 16px; }
+  .readout { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  #time { font-size: 38px; font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1.1; }
+  .status { font-size: 13px; color: var(--sub); }
+  .status.rec { color: var(--rec); font-weight: 600; }
+  .status.warn { color: var(--warn); font-weight: 600; }
+  .meta { color: var(--sub); font-size: 12px; }
+  .track { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 14px 0 6px; }
+  #level-bar { height: 100%; width: 0; background: var(--ok); transition: width .1s linear; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .btn {
+    appearance: none; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; font-family: inherit;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  .btn.danger { background: var(--rec); color: #fff; border-color: var(--rec); font-weight: 600; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  label.field { display: block; font-size: 13px; margin-bottom: 12px; }
+  label.field > span { display: block; margin-bottom: 5px; color: var(--sub); }
+  input[type="text"], input[type="number"], select {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--bg); color: var(--ink); font-size: 14px; font-family: inherit;
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
+  .row { display: flex; gap: 10px; }
+  .row input { flex: 1; }
+  ul#markers { list-style: none; margin: 12px 0 0; padding: 0; font-size: 14px; }
+  ul#markers li { display: flex; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+  ul#markers b { font-variant-numeric: tabular-nums; color: var(--sub); font-weight: 600; }
+  .alert { border-left: 4px solid var(--err); background: var(--bg); border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 14px; }
+  .alert b { color: var(--err); }
+  .alert ul { margin: 6px 0 0; padding-left: 20px; }
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; z-index: 10;
+    background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ok);
+    border-radius: 8px; padding: 10px 16px; font-size: 13px; max-width: 92vw;
+    box-shadow: 0 6px 20px rgba(0,0,0,.14);
+  }
+  .toast.warn { border-left-color: var(--warn); }
+  .toast.err { border-left-color: var(--err); }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 18px; }
+  .hint b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>研修音声レコーダー</h1>
+  <p class="lead">自分の端末で再生している音を録音して、音声ファイルとして保存します。録音は端末内で完結し、どこにも送信されません。</p>
+
+  <div class="panel">
+    <div class="readout">
+      <span id="time">0:00</span>
+      <span class="status" id="status">待機中</span>
+    </div>
+    <div class="track"><div id="level-bar"></div></div>
+    <div class="meta">推定サイズ <span id="size">—</span>　／　入力レベル <span id="peak">—</span></div>
+
+    <div class="actions">
+      <button class="btn danger" id="start" type="button">録音を開始</button>
+      <button class="btn" id="pause" type="button" disabled>一時停止</button>
+      <button class="btn primary" id="stop" type="button" disabled>停止して保存</button>
+      <button class="btn" id="save-partial" type="button" disabled>ここまでを保存</button>
+    </div>
+
+    <div class="alert" id="silence" hidden>
+      <b>音声が入っていません。</b>
+      <ul>
+        <li>共有ダイアログで「<b>タブの音声も共有する</b>」にチェックを入れて、選び直してください</li>
+        <li>再生が止まっていないか確認してください</li>
+        <li>チェックを入れても無音のままなら、そのコンテンツは<b>保護されていて録音できません</b></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="panel">
+    <label class="field">
+      <span>題名（保存するファイル名に使います）</span>
+      <input type="text" id="title" placeholder="第390回 生成AI実践セミナー">
+    </label>
+    <div class="grid">
+      <label class="field">
+        <span>音質</span>
+        <select id="bitrate">
+          <option value="64000">64 kbps（講義向け・軽い）</option>
+          <option value="128000" selected>128 kbps（標準）</option>
+          <option value="192000">192 kbps（高音質）</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>最大録音時間（分・0で無制限）</span>
+        <input type="number" id="limit" min="0" max="600" step="10" value="240">
+      </label>
+    </div>
+  </div>
+
+  <div class="panel">
+    <label class="field">
+      <span>しおり（気になった箇所に印を付けます。音声と一緒にテキストで保存されます）</span>
+      <div class="row">
+        <input type="text" id="marker-note" placeholder="メモ（空でも可）">
+        <button class="btn" id="mark" type="button" disabled>ここに印</button>
+      </div>
+    </label>
+    <div id="markers-panel" hidden><ul id="markers"></ul></div>
+  </div>
+
+  <p class="hint">
+    <b>使い方</b>　「録音を開始」→ 共有するタブとして<b>研修を再生するタブ</b>を選び、<b>「タブの音声も共有する」にチェック</b>→ 再生を始めます。<br>
+    録音中はこのタブを閉じないでください。長い研修では途中で「ここまでを保存」しておくと安心です。<br>
+    <b>用途</b>　購入して視聴できる研修を、本人が復習するために録音するための道具です。保護された配信を取り出す機能はありません。録音したものを配布・共有しないでください。
+  </p>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>/*__LIB__*/</script>
+<script>/*__APP__*/</script>
+</body>
+</html>
