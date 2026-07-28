@@ -180,6 +180,9 @@ console.log('\n【8】配線（ブラウザで動かせない分の静的検査�
   eq(/new MediaStream\(audioTracks\)/.test(appSrc), true, '録音するのは音声トラックだけ（映像は記録しない）');
   eq(/selfBrowserSurface/.test(appSrc), true, '自分のタブを共有候補から外している');
   eq(/マイクを使いません/.test(tplSrc), true, '画面にマイク不使用を明記している');
+  // 既定の音質。講義の音声なので 64kbps を標準にしている（3時間で約82MB）
+  const selected = (tplSrc.match(/<option value="(\d+)"\s+selected>/) || [])[1];
+  eq(selected, '64000', '音質の既定は 64 kbps');
   eq(/画面全体ではありません/.test(tplSrc), true, '使い方で共有の種類（タブ／画面全体ではない）を案内している');
 }
 
