@@ -183,6 +183,18 @@ console.log('\n【8】配線（ブラウザで動かせない分の静的検査�
   // 既定の音質。講義の音声なので 64kbps を標準にしている（3時間で約82MB）
   const selected = (tplSrc.match(/<option value="(\d+)"\s+selected>/) || [])[1];
   eq(selected, '64000', '音質の既定は 64 kbps');
+  const rates = [...tplSrc.matchAll(/<option value="(\d+)"/g)].map(m => Number(m[1]));
+  eq(rates, [32000, 48000, 64000, 96000, 128000], '選べるビットレート（低い順）');
+  eq(/channelCount: 1/.test(appSrc), true, 'モノラルを要求している（同じビットレートなら音質が保たれる）');
+
+  // 画面に出す目安サイズが、実際の計算と食い違っていないこと（表示だけ直して計算を忘れる事故を防ぐ）
+  const threeHours = 10_800_000;
+  [[32000, '約41MB'], [48000, '約62MB'], [64000, '約82MB'], [96000, '約124MB'], [128000, '約165MB']]
+    .forEach(([bps, label]) => {
+      const actual = '約' + Math.round(L.estimateBytes(threeHours, bps) / 1024 / 1024) + 'MB';
+      eq(actual, label, bps / 1000 + 'kbps の3時間の目安が表示と一致');
+      eq(tplSrc.includes(label), true, bps / 1000 + 'kbps の選択肢に目安が書いてある');
+    });
   eq(/画面全体ではありません/.test(tplSrc), true, '使い方で共有の種類（タブ／画面全体ではない）を案内している');
 }
 

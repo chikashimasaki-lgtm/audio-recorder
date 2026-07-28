@@ -33,6 +33,7 @@ const state = {
   wakeLock: null,
   timer: null,
   savedCount: 0,
+  channels: 0,         // 実際に取得できたチャンネル数（0＝不明）
 };
 
 const $ = sel => document.querySelector(sel);
@@ -66,7 +67,12 @@ async function start() {
     // （選ぶと当然無音になり、無音警告の原因が分かりにくいため）。非対応環境では無視される。
     stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 1 },
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      // 話し声が対象なので1チャンネルで足りる。同じビットレートならモノラルの方が
+      // 音質が保たれる。タブ音声では無視される場合もあるが、要求しても害はない。
+      audio: {
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false,
+        channelCount: 1,
+      },
       selfBrowserSurface: 'exclude',
     });
   } catch (e) {
@@ -107,6 +113,10 @@ async function start() {
 
   // タブ以外（画面全体・ウィンドウ）を共有していると、他のアプリの音も混ざる。
   // 録音は止めず、混ざりうることだけ知らせる。
+  // 実際にモノラルで取れたかを状態表示に出す（要求が通らない環境があるため）
+  const aSettings = audioTracks[0].getSettings ? audioTracks[0].getSettings() : {};
+  state.channels = aSettings.channelCount || 0;
+
   const videoTrack = stream.getVideoTracks()[0];
   const surface = videoTrack && videoTrack.getSettings ? videoTrack.getSettings().displaySurface : undefined;
   const note = shareSurfaceNote(surface);
@@ -300,7 +310,9 @@ function render() {
   $('#mark').disabled = !recording;
   $('#bitrate').disabled = recording;
   $('#status').textContent = !recording ? '待機中'
-    : paused ? '一時停止中' : '録音中（' + state.mime.replace(/;.*$/, '') + '）';
+    : paused ? '一時停止中'
+    : '録音中（' + state.mime.replace(/;.*$/, '') + '・' + Math.round(Number($('#bitrate').value) / 1000) + 'kbps'
+      + (state.channels ? '・' + (state.channels === 1 ? 'モノラル' : 'ステレオ') : '') + '）';
   $('#status').className = 'status ' + (!recording ? '' : paused ? 'warn' : 'rec');
 }
 
