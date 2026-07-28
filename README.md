@@ -42,15 +42,15 @@
 ```
 npm install     # 依存なし（スクリプトのみ）
 npm run build   # src/ から index.html を組み立て直す
-npm test        # 純ロジックと配線の検査（65項目）
+npm test        # 純ロジックと配線の検査（77項目）
 ```
 
 | パス | 役割 |
 | --- | --- |
-| `src/lib.js` | 純ロジック（ファイル名・時刻表記・形式選択・無音判定）。ブラウザとテストで共用 |
+| `src/lib.js` | 純ロジック（ファイル名・時刻表記・形式選択・無音判定・共有種別の注意）。ブラウザとテストで共用 |
 | `src/app.js` | 画面と `getDisplayMedia` / `MediaRecorder` の配線 |
 | `src/index.html` | 雛形。`build_html.js` がここへスクリプトを流し込む |
-| `index.html` | 配布物（生成物・約26KB）。直接編集せず `npm run build` する |
+| `index.html` | 配布物（生成物・約29KB）。直接編集せず `npm run build` する |
 
 ### テストについて
 
