@@ -136,9 +136,13 @@ async function start() {
 async function stop() {
   if (!state.recorder) return;
   const rec = state.recorder;
-  const done = new Promise(res => { rec.onstop = res; });
-  try { rec.stop(); } catch (_) {}
-  await done;
+  // 既に止まっている（ブラウザ側で録音が終わった）場合、onstop はもう来ないので待たない。
+  if (rec.state !== 'inactive') {
+    const done = new Promise(res => { rec.onstop = res; });
+    let stopped = true;
+    try { rec.stop(); } catch (_) { stopped = false; }
+    if (stopped) await done;
+  }
 
   clearInterval(state.timer);
   state.timer = null;
